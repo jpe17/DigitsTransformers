@@ -23,6 +23,10 @@ class SquareImageSplitingLoader():
         self.number_of_segments = number_of_segments
         self.segment_dimension = segment_dimension
     
+    def __len__(self):
+        """Return the length of the underlying loader"""
+        return len(self.loader)
+    
     def __iter__(self):
         kc, kh, kw = 1, self.segment_dimension, self.segment_dimension  # kernel size
         dc, dh, dw = 1, self.segment_dimension, self.segment_dimension  # stride
