@@ -37,15 +37,12 @@ class SquareImageSplitingLoader():
 def test_split():
     dataset = MnistLoader()
     splitting_loader = SquareImageSplitingLoader(dataset.get_loaders()[0]) 
-    for batch in splitting_loader:
-        print(f"batch shape: {batch[0].shape}, batch label shape: {batch[1].shape}")
+    for idx, batch in enumerate(splitting_loader):
+        print(f"BATCH {idx}, batch shape: {batch[0].shape}, batch label shape: {batch[1].shape}")
         for image_index, splitted_image in enumerate(batch[0]):
-            print(f"split image shape: {splitted_image.shape}")
             for segment_index, segment in enumerate(splitted_image):
-                print(f"segment shape: {segment.shape}")
-                save_image(segment, f'./test/segment{segment_index}.png')
-            break
-        break
+                # save_image(segment, f'./test/img{image_index}-segment{segment_index}.png')
+                pass
         
 if __name__ == "__main__":
     test_split()
