@@ -1,8 +1,6 @@
 from loaders import MnistLoader
 from loaders import SquareImageSplitingLoader
 
-
-
 def dev_run():
     mnist_loader = MnistLoader()
     train_loader, validation_loader = mnist_loader.get_loaders()
