@@ -1,5 +1,4 @@
-from loaders import MnistLoader
-from loaders import SquareImageSplitingLoader
+from backend.data_processing import MnistLoader, SquareImageSplitingLoader
 
 def dev_run():
     mnist_loader = MnistLoader()
