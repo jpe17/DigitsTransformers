@@ -30,7 +30,7 @@ class SquareImageSplitingLoader():
         for index, batch in enumerate(self.loader):
             batch[0] = batch[0].unfold(1, kc, dc).unfold(2, kh, dh).unfold(3, kw, dw)
             batch[0] = batch[0].contiguous().view(-1, kc, kh, kw)
-            batch[0] = reshape(batch[0], (128, self.number_of_segments, 1, self.segment_dimension, self.segment_dimension))
+            batch[0] = reshape(batch[0], (-1, self.number_of_segments, 1, self.segment_dimension, self.segment_dimension))
             yield batch
     
     
