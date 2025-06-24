@@ -7,8 +7,28 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+def _build_sincos_pos_embed(self, num_patches, embed_dim):
+    """
+    Build 1D sine-cosine positional encoding.
+    Shape: [1, num_patches, embed_dim]
+    """
+    def get_angle(pos, i, d_model):
+        return pos / (10000 ** (2 * (i // 2) / d_model))
+
+    pos = torch.arange(num_patches).unsqueeze(1)  # [num_patches, 1]
+    i = torch.arange(embed_dim).unsqueeze(0)      # [1, embed_dim]
+    angle_rates = get_angle(pos, i, embed_dim)    # [num_patches, embed_dim]
+
+    pos_encoding = torch.zeros_like(angle_rates)
+    pos_encoding[:, 0::2] = torch.sin(angle_rates[:, 0::2])
+    pos_encoding[:, 1::2] = torch.cos(angle_rates[:, 1::2])
+
+    return pos_encoding.unsqueeze(0)  # [1, num_patches, embed_dim]
 
 class VisionTransformer(nn.Module):
+
+    from transformer_architecture import _build_sincos_pos_embed
+    
     def __init__(self, patch_dim=49, embed_dim=32, num_patches=16, num_classes=10, 
                  num_heads=4, num_layers=3, ffn_ratio=2):
         super().__init__()
@@ -21,7 +41,7 @@ class VisionTransformer(nn.Module):
         self.patch_embedding = nn.Linear(patch_dim, embed_dim)  # 49 -> 32
         
         # Learnable positional embeddings for each patch position
-        self.register_buffer('pos_embedding', self._build_sincos_pos_embed(num_patches, embed_dim)) # [1, 16, 32]
+        self.register_buffer('pos_embedding', _build_sincos_pos_embed(num_patches, embed_dim)) # [1, 16, 32]
         
         # Multi-head attention components (we'll use these in the forward pass)
         self.W_q = nn.ModuleList([nn.Linear(embed_dim, embed_dim) for _ in range(num_layers)])
@@ -133,21 +153,30 @@ class VisionTransformer(nn.Module):
         # Data shape: [batch_size, 10] - logits for 10 digit classes (0-9)
         
         return logits 
-    
-    def _build_sincos_pos_embed(self, num_patches, embed_dim):
-        """
-        Build 1D sine-cosine positional encoding.
-        Shape: [1, num_patches, embed_dim]
-        """
-        def get_angle(pos, i, d_model):
-            return pos / (10000 ** (2 * (i // 2) / d_model))
 
-        pos = torch.arange(num_patches).unsqueeze(1)  # [num_patches, 1]
-        i = torch.arange(embed_dim).unsqueeze(0)      # [1, embed_dim]
-        angle_rates = get_angle(pos, i, embed_dim)    # [num_patches, embed_dim]
 
-        pos_encoding = torch.zeros_like(angle_rates)
-        pos_encoding[:, 0::2] = torch.sin(angle_rates[:, 0::2])
-        pos_encoding[:, 1::2] = torch.cos(angle_rates[:, 1::2])
 
-        return pos_encoding.unsqueeze(0)  # [1, num_patches, embed_dim]
+class DigitDecoder(nn.Module):
+    def __init__(self, d_model=128, num_layers=2, num_heads=4, max_len=4):
+        super().__init__()
+        self.token_embedding = nn.Embedding(11, d_model)  # 0-9 digits + START
+        self.pos_embedding = nn.Parameter(torch.randn(1, max_len, d_model))
+        
+        decoder_layer = nn.TransformerDecoderLayer(d_model, num_heads, dim_feedforward=512)
+        self.decoder = nn.TransformerDecoder(decoder_layer, num_layers)
+
+        self.output_proj = nn.Linear(d_model, 10)  # output: 0-9 digits only
+
+    def forward(self, tgt_tokens, encoder_output):
+        # tgt_tokens: [batch, seq_len] - input digits (shifted right)
+        # encoder_output: [batch, src_len, d_model]
+
+        tgt_emb = self.token_embedding(tgt_tokens) + self.pos_embedding[:, :tgt_tokens.size(1), :]
+        tgt_emb = tgt_emb.transpose(0, 1)  # [seq_len, batch, d_model]
+        memory = encoder_output.transpose(0, 1)
+
+        tgt_mask = nn.Transformer.generate_square_subsequent_mask(tgt_tokens.size(1)).to(tgt_tokens.device)
+
+        out = self.decoder(tgt_emb, memory, tgt_mask=tgt_mask)  # [seq_len, batch, d_model]
+        logits = self.output_proj(out.transpose(0, 1))  # [batch, seq_len, 10]
+        return logits
