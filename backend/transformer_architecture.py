@@ -21,7 +21,7 @@ class VisionTransformer(nn.Module):
         self.patch_embedding = nn.Linear(patch_dim, embed_dim)  # 49 -> 32
         
         # Learnable positional embeddings for each patch position
-        self.pos_embedding = nn.Parameter(torch.randn(1, num_patches, embed_dim))  # [1, 16, 32]
+        self.register_buffer('pos_embedding', self._build_sincos_pos_embed(num_patches, embed_dim)) # [1, 16, 32]
         
         # Multi-head attention components (we'll use these in the forward pass)
         self.W_q = nn.ModuleList([nn.Linear(embed_dim, embed_dim) for _ in range(num_layers)])
@@ -133,3 +133,21 @@ class VisionTransformer(nn.Module):
         # Data shape: [batch_size, 10] - logits for 10 digit classes (0-9)
         
         return logits 
+    
+    def _build_sincos_pos_embed(self, num_patches, embed_dim):
+        """
+        Build 1D sine-cosine positional encoding.
+        Shape: [1, num_patches, embed_dim]
+        """
+        def get_angle(pos, i, d_model):
+            return pos / (10000 ** (2 * (i // 2) / d_model))
+
+        pos = torch.arange(num_patches).unsqueeze(1)  # [num_patches, 1]
+        i = torch.arange(embed_dim).unsqueeze(0)      # [1, embed_dim]
+        angle_rates = get_angle(pos, i, embed_dim)    # [num_patches, embed_dim]
+
+        pos_encoding = torch.zeros_like(angle_rates)
+        pos_encoding[:, 0::2] = torch.sin(angle_rates[:, 0::2])
+        pos_encoding[:, 1::2] = torch.cos(angle_rates[:, 1::2])
+
+        return pos_encoding.unsqueeze(0)  # [1, num_patches, embed_dim]
