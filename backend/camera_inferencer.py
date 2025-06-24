@@ -9,7 +9,7 @@ import numpy as np
 import os
 from PIL import Image
 import torch.nn.functional as F
-from transformer_architecture import VisionTransformerEncoder
+from transformer_architecture import VisionTransformer
 from data_processing import SquareImageSplitingLoader
 from data_processing import MnistLoader
 from data_processing import setup_data_loaders
@@ -20,9 +20,9 @@ class DigitInferencer:
         if model_path is None:
             # Get the correct path to artifacts directory
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            model_path = os.path.join(current_dir, "artifacts", "trained_model.pth")
+            model_path = os.path.join(current_dir, "../artifacts", "trained_model.pth")
         # Initialize model with the same architecture used in training
-        self.model = VisionTransformerEncoder(
+        self.model = VisionTransformer(
             patch_dim=49,
             embed_dim=32, 
             num_patches=16,

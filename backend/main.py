@@ -6,7 +6,7 @@ Simple Vision Transformer Demo
 import torch
 import os
 from data_processing import setup_data_loaders
-from transformer_architecture import VisionTransformerEncoder
+from transformer_architecture import VisionTransformer
 from training_engine import train_model
 
 
@@ -25,7 +25,7 @@ def main():
     print()
     
     # Create model
-    model = VisionTransformerEncoder(
+    model = VisionTransformer(
         patch_dim=49,      # 7x7 = 49
         embed_dim=32,      # Small embedding dimension
         num_patches=16,    # 4x4 grid of patches
