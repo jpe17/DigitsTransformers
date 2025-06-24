@@ -4,4 +4,3 @@ tqdm
 opencv-python
 numpy
 pillow
-cv2

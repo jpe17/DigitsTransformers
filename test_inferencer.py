@@ -6,7 +6,7 @@ Test the digit inferencer with sample images
 import torch
 import numpy as np
 import os
-from camera_inferencer import DigitInferencer
+from backend.camera_inferencer import DigitInferencer
 from backend.data_processing import setup_data_loaders
 
 
