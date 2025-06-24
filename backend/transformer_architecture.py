@@ -8,107 +8,128 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class TransformerEncoderLayer(nn.Module):
-    def __init__(self, embed_dim=32, num_heads=4, ffn_ratio=2):
+class VisionTransformer(nn.Module):
+    def __init__(self, patch_dim=49, embed_dim=32, num_patches=16, num_classes=10, 
+                 num_heads=4, num_layers=3, ffn_ratio=2):
         super().__init__()
         self.embed_dim = embed_dim
         self.num_heads = num_heads
-        self.head_dim = embed_dim // num_heads
-        
-        # Standard multi-head attention (split embedding)
-        self.W_q = nn.Linear(embed_dim, embed_dim)
-        self.W_k = nn.Linear(embed_dim, embed_dim)
-        self.W_v = nn.Linear(embed_dim, embed_dim)
-        self.W_o = nn.Linear(embed_dim, embed_dim)
-        
-        # Feed-forward network
-        self.ffn = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim * ffn_ratio),
-            nn.ReLU(),
-            nn.Linear(embed_dim * ffn_ratio, embed_dim)
-        )
-        
-        # Layer normalization
-        self.norm1 = nn.LayerNorm(embed_dim)
-        self.norm2 = nn.LayerNorm(embed_dim)
-        
-    def forward(self, x):
-        # Multi-head self-attention
-        residual = x
-        x = self.norm1(x)
-        
-        batch_size, seq_len = x.shape[0], x.shape[1]
-        
-        # Compute Q, K, V and split into heads
-        Q = self.W_q(x).view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        K = self.W_k(x).view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        V = self.W_v(x).view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        
-        # Scaled dot-product attention
-        attention_scores = Q @ K.transpose(-2, -1) / (self.head_dim ** 0.5)
-        attention_weights = F.softmax(attention_scores, dim=-1)
-        attention_output = attention_weights @ V
-        
-        # Concatenate heads and project
-        attention_output = attention_output.transpose(1, 2).contiguous().view(batch_size, seq_len, self.embed_dim)
-        x = self.W_o(attention_output)
-        x = residual + x  # Residual connection
-        
-        # Feed-forward network
-        residual = x
-        x = self.norm2(x)
-        x = self.ffn(x)
-        x = residual + x  # Residual connection
-        
-        return x
-
-
-class VisionTransformerEncoder(nn.Module):
-    def __init__(self, patch_dim=49, embed_dim=32, num_patches=16, num_classes=10, 
-                 num_heads=4, num_layers=3):
-        super().__init__()
-        self.embed_dim = embed_dim
+        self.head_dim = embed_dim // num_heads  # 32 // 4 = 8 dimensions per head
         self.num_layers = num_layers
         
-        # Patch embedding and positional encoding
-        self.patch_embedding = nn.Linear(patch_dim, embed_dim)
-        self.pos_embedding = nn.Parameter(torch.randn(1, num_patches, embed_dim))
+        # Patch embedding: converts flattened 7x7 patches (49 pixels) to embedding vectors
+        self.patch_embedding = nn.Linear(patch_dim, embed_dim)  # 49 -> 32
         
-        # Transformer layers
-        self.encoder_layers = nn.ModuleList([
-            TransformerEncoderLayer(embed_dim, num_heads) 
-            for _ in range(num_layers)
+        # Learnable positional embeddings for each patch position
+        self.pos_embedding = nn.Parameter(torch.randn(1, num_patches, embed_dim))  # [1, 16, 32]
+        
+        # Multi-head attention components (we'll use these in the forward pass)
+        self.W_q = nn.ModuleList([nn.Linear(embed_dim, embed_dim) for _ in range(num_layers)])
+        self.W_k = nn.ModuleList([nn.Linear(embed_dim, embed_dim) for _ in range(num_layers)])
+        self.W_v = nn.ModuleList([nn.Linear(embed_dim, embed_dim) for _ in range(num_layers)])
+        self.W_o = nn.ModuleList([nn.Linear(embed_dim, embed_dim) for _ in range(num_layers)])
+        
+        # Feed-forward networks for each layer
+        self.ffn_layers = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(embed_dim, embed_dim * ffn_ratio),  # 32 -> 64
+                nn.ReLU(),
+                nn.Linear(embed_dim * ffn_ratio, embed_dim)   # 64 -> 32
+            ) for _ in range(num_layers)
         ])
         
-        # Classification head
-        self.classifier = nn.Linear(embed_dim, num_classes)
+        # Layer normalization for each transformer layer (2 per layer: before attention, before FFN)
+        self.norm1_layers = nn.ModuleList([nn.LayerNorm(embed_dim) for _ in range(num_layers)])
+        self.norm2_layers = nn.ModuleList([nn.LayerNorm(embed_dim) for _ in range(num_layers)])
+        
+        # Final classification head
+        self.classifier = nn.Linear(embed_dim, num_classes)  # 32 -> 10
         
     def forward(self, x):
-        # print(f"\n1. Input patches: {x.shape}")
+        # INPUT: x shape = [batch_size, 16, 1, 7, 7] - 16 patches of 7x7 pixels each
+        batch_size = x.shape[0]
         
-        # Flatten patches: [batch, 16, 1, 7, 7] -> [batch, 16, 49]
-        x = x.flatten(start_dim=2)
-        # print(f"2. Flattened: {x.shape}")
+        # Step 1: Flatten patches from [batch, 16, 1, 7, 7] to [batch, 16, 49]
+        x = x.flatten(start_dim=2)  # Flatten the 1x7x7 = 49 pixels per patch
+        # Data shape: [batch_size, 16, 49] - 16 patches, each with 49 pixel values
         
-        # Embed patches: [batch, 16, 49] -> [batch, 16, 32]
-        x = self.patch_embedding(x)
-        # print(f"3. Embedded: {x.shape}")
+        # Step 2: Embed patches using linear projection [batch, 16, 49] -> [batch, 16, 32]
+        x = self.patch_embedding(x)  # Convert 49-dim pixel vectors to 32-dim embeddings
+        # Data shape: [batch_size, 16, 32] - 16 patch embeddings of 32 dimensions each
         
-        # Add positional embeddings
-        x = x + self.pos_embedding
-        # print(f"4. With positions: {x.shape}")
+        # Step 3: Add positional embeddings to tell the model where each patch is located
+        x = x + self.pos_embedding  # Broadcasting: [batch, 16, 32] + [1, 16, 32]
+        # Data shape: [batch_size, 16, 32] - embeddings now contain positional information
         
-        # Pass through transformer layers
-        # print(f"5. Through {self.num_layers} transformer layers:")
-        for i, layer in enumerate(self.encoder_layers):
-            # print(f"  Layer {i+1}:")
-            x = layer(x)
+        # Step 4: Pass through transformer layers
+        for layer_idx in range(self.num_layers):
+            # === MULTI-HEAD SELF-ATTENTION ===
+            
+            # Pre-attention layer norm
+            residual = x  # Save for residual connection
+            x = self.norm1_layers[layer_idx](x)  # Normalize before attention
+            # Data shape: [batch_size, 16, 32] - normalized embeddings
+            
+            # Compute Query, Key, Value matrices
+            Q = self.W_q[layer_idx](x)  # [batch, 16, 32] -> [batch, 16, 32]
+            K = self.W_k[layer_idx](x)  # [batch, 16, 32] -> [batch, 16, 32]
+            V = self.W_v[layer_idx](x)  # [batch, 16, 32] -> [batch, 16, 32]
+            
+            # Reshape for multi-head attention: split embedding into num_heads
+            # From [batch, 16, 32] to [batch, 4, 16, 8] - 4 heads, each with 8 dimensions
+            Q = Q.view(batch_size, 16, self.num_heads, self.head_dim).transpose(1, 2)
+            K = K.view(batch_size, 16, self.num_heads, self.head_dim).transpose(1, 2)
+            V = V.view(batch_size, 16, self.num_heads, self.head_dim).transpose(1, 2)
+            # Data shape: [batch_size, 4, 16, 8] - 4 attention heads, 16 patches, 8 dims per head
+            
+            # Scaled dot-product attention
+            # Q @ K^T gives attention scores between all pairs of patches
+            attention_scores = Q @ K.transpose(-2, -1)  # [batch, 4, 16, 16]
+            attention_scores = attention_scores / (self.head_dim ** 0.5)  # Scale by sqrt(head_dim)
+            # Data shape: [batch_size, 4, 16, 16] - attention scores between all patch pairs
+            
+            # Softmax to get attention weights (probabilities)
+            attention_weights = F.softmax(attention_scores, dim=-1)
+            # Data shape: [batch_size, 4, 16, 16] - normalized attention weights
+            
+            # Apply attention weights to values
+            attention_output = attention_weights @ V  # [batch, 4, 16, 16] @ [batch, 4, 16, 8]
+            # Data shape: [batch_size, 4, 16, 8] - attended values for each head
+            
+            # Concatenate heads: [batch, 4, 16, 8] -> [batch, 16, 32]
+            attention_output = attention_output.transpose(1, 2).contiguous()
+            attention_output = attention_output.view(batch_size, 16, self.embed_dim)
+            # Data shape: [batch_size, 16, 32] - concatenated multi-head attention output
+            
+            # Final linear projection of attention output
+            x = self.W_o[layer_idx](attention_output)
+            # Data shape: [batch_size, 16, 32] - projected attention output
+            
+            # Residual connection: add input to attention output
+            x = residual + x
+            # Data shape: [batch_size, 16, 32] - with residual connection
+            
+            # === FEED-FORWARD NETWORK ===
+            
+            # Pre-FFN layer norm
+            residual = x  # Save for residual connection
+            x = self.norm2_layers[layer_idx](x)  # Normalize before FFN
+            # Data shape: [batch_size, 16, 32] - normalized embeddings
+            
+            # Feed-forward network: 32 -> 64 -> 32 (with ReLU in between)
+            x = self.ffn_layers[layer_idx](x)
+            # Data shape: [batch_size, 16, 32] - FFN output
+            
+            # Residual connection: add input to FFN output
+            x = residual + x
+            # Data shape: [batch_size, 16, 32] - final layer output with residual
         
-        # Global average pooling and classification
-        x = x.mean(dim=1)  # [batch, 32]
-        # print(f"6. After pooling: {x.shape}")
+        # Step 5: Global average pooling - average across all patches
+        x = x.mean(dim=1)  # Average over the 16 patches dimension
+        # Data shape: [batch_size, 32] - single embedding vector per image
         
-        logits = self.classifier(x)  # [batch, 10]
-        # print(f"7. Final logits: {logits.shape}")
+        # Step 6: Classification head - convert to class probabilities
+        logits = self.classifier(x)  # [batch, 32] -> [batch, 10]
+        # Data shape: [batch_size, 10] - logits for 10 digit classes (0-9)
         
         return logits 
