@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-def _build_sincos_pos_embed(self, num_patches, embed_dim):
+def _build_sincos_pos_embed(num_patches, embed_dim):
     """
     Build 1D sine-cosine positional encoding.
     Shape: [1, num_patches, embed_dim]
@@ -27,8 +27,6 @@ def _build_sincos_pos_embed(self, num_patches, embed_dim):
 
 class VisionTransformer(nn.Module):
 
-    from transformer_architecture import _build_sincos_pos_embed
-    
     def __init__(self, patch_dim=49, embed_dim=32, num_patches=16, num_classes=10, 
                  num_heads=4, num_layers=3, ffn_ratio=2):
         super().__init__()
@@ -41,7 +39,7 @@ class VisionTransformer(nn.Module):
         self.patch_embedding = nn.Linear(patch_dim, embed_dim)  # 49 -> 32
         
         # Learnable positional embeddings for each patch position
-        self.register_buffer('pos_embedding', _build_sincos_pos_embed(num_patches, embed_dim)) # [1, 16, 32]
+        self.register_buffer('pos_embedding', _build_sincos_pos_embed(num_patches, self.embed_dim)) # [1, 16, 32]
         
         # Multi-head attention components (we'll use these in the forward pass)
         self.W_q = nn.ModuleList([nn.Linear(embed_dim, embed_dim) for _ in range(num_layers)])
