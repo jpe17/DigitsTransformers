@@ -78,3 +78,15 @@ jupyter notebook model_draft.ipynb
 ├── requirements.txt        # Project dependencies
 └── README.md
 ```
+
+## Live Demo
+
+Here's the model in action, trying to recognize a handwritten digit from a webcam feed:
+
+![Live Demo](picture_testing.png)
+
+## Limitations and Future Work
+
+The model was trained on the MNIST dataset, which consists of pre-processed images of black digits on a white background (the inverse of what is shown in the live demo). As a result, its performance on real-world, unprocessed images is limited. The model struggles when the digit is not centered, properly scaled, or has a different color scheme.
+
+The next step for this line of work is a separate project that will implement a full encoder-decoder architecture. The goal is to create a model that can take a live camera feed, automatically detect and crop the digit, and pre-process it to resemble the MNIST data format before feeding it to the classification model. This will significantly improve its real-world usability.
